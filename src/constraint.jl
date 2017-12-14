@@ -60,15 +60,16 @@ function MOI.addconstraint!(
     conid = allocateconstraints(m,N)
     addlhsblock!(m,
                  conid,
-                 axb.outputindex,
+                 orderidx(axb.outputindex, dom),
                  axb.variables,
                  axb.coefficients)
     conidxs = getindexes(m.c_block,conid)
-    m.c_constant[conidxs] = axb.constant
+    constant = orderval(axb.constant, dom)
+    m.c_constant[conidxs] = constant
 
     m.c_block_slack[conid]
 
-    addbound!(m,conid,conidxs,axb.constant,dom)
+    addbound!(m,conid,conidxs,constant,dom)
     conref = MOI.ConstraintIndex{MOI.VectorAffineFunction{Float64},D}(UInt64(conid) << 1)
     select(m.constrmap,MOI.VectorAffineFunction{Float64},D)[conref.value] = conid
 
@@ -179,6 +180,20 @@ is_positivesemidefinite_set(dom) = false
 is_conic_set(dom :: VectorCone) = true
 is_conic_set(dom) = false
 
+orderidx(idx, s) = idx
+expmap(i) = 4 - i
+function orderidx(idx, s::MOI.ExponentialCone)
+    expmap.(idx)
+end
+
+orderval(val, s) = val
+orderval(val, s::MOI.ExponentialCone) = val[3:-1:1]
+orderval(val, s::MOI.PositiveSemidefiniteConeTriangle) = sympackedUtoL(val, s.dimension)
+
+reorderval(val, s) = val
+reorderval(val, s::Type{MOI.ExponentialCone}) = val[3:-1:1]
+reorderval(val, s::Type{MOI.PositiveSemidefiniteConeTriangle}) = sympackedLtoU(val)
+
 addvarconstr(m :: MosekModel, subj :: Vector{Int}, dom :: MOI.Reals) = nothing
 function addvarconstr(m :: MosekModel, subj :: Vector{Int}, dom :: MOI.Zeros)
     bnd = zeros(Float64,length(subj))
@@ -231,6 +246,18 @@ end
 
 abstractset2ct(dom::MOI.SecondOrderCone) = MSK_CT_QUAD
 abstractset2ct(dom::MOI.RotatedSecondOrderCone) = MSK_CT_RQUAD
+abstractset2ct(dom::MOI.ExponentialCone) = MSK_CT_PEXP
+function ct2abstractset(ct::Mosek.Conetype)
+    if ct == MSK_CT_QUAD
+        MOI.SecondOrderCone
+    elseif ct == MSK_CT_RQUAD
+        MOI.RotatedSecondOrderCone
+    else
+        @assert ct == MSK_CT_PEXP
+        MOI.ExponentialCone
+    end
+end
+getconeset(m::MosekModel, cid) = ct2abstractset(getconeinfo(m.task, m.c_coneid[cid])[1])
 function MOI.addconstraint!(
     m   :: MosekModel,
     xs  :: MOI.SingleVariable,
@@ -264,7 +291,7 @@ function MOI.addconstraint!(m   :: MosekModel,
                                          xs  :: MOI.VectorOfVariables,
                                          dom :: D) where { D <: PositiveSemidefiniteCone }
     N = dom.dimension
-    vars = sympackedUtoL(xs.variables, N)
+    vars = orderval(xs.variables, dom)
     subj = Vector{Int}(length(vars))
     for i in 1:length(subj)
         getindexes(m.x_block, ref2id(vars[i]),subj,i)
@@ -342,6 +369,7 @@ function MOI.addconstraint!{D <: MOI.AbstractSet}(m :: MosekModel, xs :: MOI.Vec
     for i in 1:length(subj)
         getindexes(m.x_block, ref2id(xs.variables[i]),subj,i)
     end
+    subj = orderval(subj, dom)
 
     mask = domain_type_mask(dom)
     if any(mask .& m.x_boundflags[subj[1]] .> 0)

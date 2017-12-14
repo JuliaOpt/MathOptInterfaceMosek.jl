@@ -54,6 +54,7 @@ struct ConstraintMap
     xs_reals             :: Dict{Int64,Int} # (VectorOfVariables,Reals) -> constraint number
     xs_qcone             :: Dict{Int64,Int} # (VectorOfVariables,SecondOrderCone) -> constraint number
     xs_rqcone            :: Dict{Int64,Int} # (VectorOfVariables,RotatedSecondOrderCone) -> constraint number
+    xs_econe             :: Dict{Int64,Int} # (VectorOfVariables,ExponentialCone) -> constraint number
     xs_psdconetriangle   :: Dict{Int64,Int} # (VectorOfVariables,PositiveSemidefiniteConeTriangle) -> constraint number
 
     axb_lessthan         :: Dict{Int64,Int} # (ScalarAffineFunction,LessThan) -> constraint number
@@ -71,10 +72,11 @@ struct ConstraintMap
     axbs_reals           :: Dict{Int64,Int} # (VectorAffineFunction,Reals) -> constraint number
     axbs_qcone           :: Dict{Int64,Int} # (VectorAffineFunction,SecondOrderCone) -> constraint number
     axbs_rqcone          :: Dict{Int64,Int} # (VectorAffineFunction,RotatedSecondOrderCone) -> constraint number
+    axbs_econe           :: Dict{Int64,Int} # (VectorAffineFunction,ExponentialCone) -> constraint number
     axbs_psdconetriangle :: Dict{Int64,Int} # (VectorAffineFunction,PositiveSemidefiniteConeTriangle) -> constraint number
 end
 
-ConstraintMap() = ConstraintMap([Dict{Int64,Int}() for i in 1:30]...)
+ConstraintMap() = ConstraintMap([Dict{Int64,Int}() for i in 1:32]...)
 select(cm::ConstraintMap,::Type{MOI.SingleVariable},               ::Type{MOI.LessThan{Float64}}) =                cm.x_lessthan
 select(cm::ConstraintMap,::Type{MOI.SingleVariable},               ::Type{MOI.GreaterThan{Float64}}) =             cm.x_greaterthan
 select(cm::ConstraintMap,::Type{MOI.SingleVariable},               ::Type{MOI.EqualTo{Float64}}) =                 cm.x_equalto
@@ -89,6 +91,7 @@ select(cm::ConstraintMap,::Type{MOI.VectorOfVariables},            ::Type{MOI.Ze
 select(cm::ConstraintMap,::Type{MOI.VectorOfVariables},            ::Type{MOI.Reals}) =                            cm.xs_reals
 select(cm::ConstraintMap,::Type{MOI.VectorOfVariables},            ::Type{MOI.SecondOrderCone}) =                  cm.xs_qcone
 select(cm::ConstraintMap,::Type{MOI.VectorOfVariables},            ::Type{MOI.RotatedSecondOrderCone}) =           cm.xs_rqcone
+select(cm::ConstraintMap,::Type{MOI.VectorOfVariables},            ::Type{MOI.ExponentialCone}) =                  cm.xs_econe
 select(cm::ConstraintMap,::Type{MOI.VectorOfVariables},            ::Type{MOI.PositiveSemidefiniteConeTriangle}) = cm.xs_psdconetriangle
 select(cm::ConstraintMap,::Type{MOI.ScalarAffineFunction{Float64}},::Type{MOI.LessThan{Float64}}) =                cm.axb_lessthan
 select(cm::ConstraintMap,::Type{MOI.ScalarAffineFunction{Float64}},::Type{MOI.GreaterThan{Float64}}) =             cm.axb_greaterthan
@@ -104,6 +107,7 @@ select(cm::ConstraintMap,::Type{MOI.VectorAffineFunction{Float64}},::Type{MOI.Ze
 select(cm::ConstraintMap,::Type{MOI.VectorAffineFunction{Float64}},::Type{MOI.Reals}) =                            cm.axbs_reals
 select(cm::ConstraintMap,::Type{MOI.VectorAffineFunction{Float64}},::Type{MOI.SecondOrderCone}) =                  cm.axbs_qcone
 select(cm::ConstraintMap,::Type{MOI.VectorAffineFunction{Float64}},::Type{MOI.RotatedSecondOrderCone}) =           cm.axbs_rqcone
+select(cm::ConstraintMap,::Type{MOI.VectorAffineFunction{Float64}},::Type{MOI.ExponentialCone}) =                  cm.axbs_econe
 select(cm::ConstraintMap,::Type{MOI.VectorAffineFunction{Float64}},::Type{MOI.PositiveSemidefiniteConeTriangle}) = cm.axbs_psdconetriangle
 
 Base.getindex{F,D}(cm::ConstraintMap,r :: MOI.ConstraintIndex{F,D}) = select(cm,F,D)[r.value]
@@ -231,6 +235,7 @@ using MathOptInterfaceUtilities
 const MOIU = MathOptInterfaceUtilities
 @bridge GeoMean MOIU.GeoMeanBridge () () (GeometricMeanCone,) () () () (VectorOfVariables,) (VectorAffineFunction,)
 @bridge RootDet MOIU.RootDetBridge () () (RootDetConeTriangle,) () () () (VectorOfVariables,) (VectorAffineFunction,)
+@bridge LogDet MOIU.LogDetBridge () () (LogDetConeTriangle,) () () () (VectorOfVariables,) (VectorAffineFunction,)
 
 function MosekInstance(; kws...)
     t = maketask()
@@ -262,7 +267,7 @@ function MosekInstance(; kws...)
         if ! be_quiet
             Mosek.putstreamfunc(t,Mosek.MSK_STREAM_LOG,m -> print(m))
         end
-        RootDet{Float64}(GeoMean{Float64}(
+        LogDet{Float64}(RootDet{Float64}(GeoMean{Float64}(
         MosekModel(t,# task
                    0, # public numvar
                    ConstraintMap(), # public constraints
@@ -280,7 +285,7 @@ function MosekInstance(; kws...)
                    0, # cone counter
                    Mosek.MSK_RES_OK,
                    MosekSolution[]) # trm
-        ))
+        )))
     catch
         Mosek.deletetask(t)
         rethrow()
