@@ -227,6 +227,30 @@ mutable struct MosekModel  <: MOI.AbstractOptimizer
     solutions :: Vector{MosekSolution}
 end
 
+function MOI.empty!(m::MosekModel)
+    m.task = maketask()
+    m.publicnumvar = 0
+    m.constrmap = ConstraintMap()
+    m.x_block = LinkedInts()
+    empty!(m.x_boundflags)
+    empty!(m.x_numxc)
+    m.xc_block = LinkedInts()
+    empty!(m.xc_bounds)
+    empty!(m.xc_coneid)
+    empty!(m.xc_idxs)
+    m.c_block = LinkedInts()
+    empty!(m.c_constant)
+    empty!(m.c_block_slack)
+    empty!(m.c_coneid)
+    m.conecounter = 0
+    m.trm = Mosek.MSK_RES_OK
+    empty!(m.solutions)
+end
+
+function MOI.isempty(m::MosekModel)
+    iszero(m.publicnumvar) && isempty(m.x_boundflags) && isempty(m.x_numxc) && isempty(m.xc_bounds) && isempty(m.xc_coneid) && isempty(m.xc_idxs) && isempty(m.c_constant) && isempty(m.c_block_slack) && isempty(m.c_coneid) && iszero(m.conecounter) && isempty(m.solutions)
+end
+
 function MosekOptimizer(; kws...)
     t = maketask()
     try
