@@ -264,6 +264,7 @@ mutable struct MosekModel  <: MOI.AbstractOptimizer
     feasibility :: Bool
 
     fallback :: Union{String,Nothing}
+    service  :: Union{String,Nothing}
 end
 
 function parametrized_task(be_quiet::Bool,
@@ -294,6 +295,7 @@ end
 function parse_parameters(kws)
     be_quiet = false
     fallback = nothing
+    service   = nothing
     ipars = Dict{String, Integer}()
     dpars = Dict{String, AbstractFloat}()
     spars = Dict{String, AbstractString}()
@@ -303,6 +305,8 @@ function parse_parameters(kws)
             be_quiet = be_quiet || convert(Bool,val)
         elseif parname == "fallback"
             fallback = val
+        elseif parname == "service"
+            service = val
         elseif parname == "verbose"
             # pass
         elseif startswith(parname, "MSK_IPAR_")
@@ -321,12 +325,12 @@ function parse_parameters(kws)
             error("Value $val for parameter $option has unrecognized type")
         end
     end
-    return be_quiet, fallback,ipars, dpars, spars
+    return be_quiet,fallback,service,ipars, dpars, spars
 end
 
 export Mosek
 function Mosek.Optimizer(; kws...)
-    be_quiet, fallback,ipars, dpars, spars = parse_parameters(kws)
+    be_quiet, fallback, service,ipars, dpars, spars = parse_parameters(kws)
     return MosekModel(parametrized_task(be_quiet, ipars, dpars, spars), # task
                       be_quiet,
                       ipars,
@@ -349,14 +353,32 @@ function Mosek.Optimizer(; kws...)
                       0, # cone counter
                       nothing,# trm
                       MosekSolution[],
-                      true,
-                      fallback) # feasibility_sense
+                      true,# feasibility_sense
+                      fallback,
+                      service) 
 end
 
 
 
-function MOI.optimize!(m::MosekModel)
-    m.trm = if m.fallback == nothing; optimize(m.task) else optimize(m.task,m.fallback) end
+function MOI.optimize!(m::MosekModel)    
+    m.trm =
+        if m.service === nothing
+            if m.fallback === nothing
+                optimize(m.task)
+            else
+                optimize(m.task,m.fallback)
+            end
+        else
+            r = match(r"mosek://([a-zA-Z-]+(\.[a-zA-Z-]+)*)(:([0-9]+))?$",m.service)
+            if r == nothing
+                error("Invalid server specification $service")
+            else
+                server = r.captures[1]
+                port   = if r.captures[4] == nothing "30080" else r.captures[4] end
+                optimizermt(m.task,server,port)
+            end
+        end
+            
     m.solutions = MosekSolution[]
     if solutiondef(m.task,MSK_SOL_ITG)
         push!(m.solutions,
