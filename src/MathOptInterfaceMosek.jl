@@ -303,6 +303,8 @@ function parse_parameters(kws)
             be_quiet = be_quiet || convert(Bool,val)
         elseif parname == "fallback"
             fallback = val
+        elseif parname == "verbose"
+            # pass
         elseif startswith(parname, "MSK_IPAR_")
             ipars[parname] = val
         elseif startswith(parname, "MSK_DPAR_")
@@ -310,11 +312,11 @@ function parse_parameters(kws)
         elseif startswith(parname, "MSK_SPAR_")
             spars[parname] = val
         elseif isa(val, Integer)
-            ipars["MSK_IPAR_$parname"] = val
+            ipars["MSK_IPAR_$(uppercase(parname))"] = val
         elseif isa(val, AbstractFloat)
-            dpars["MSK_DPAR_$parname"] = val
+            dpars["MSK_DPAR_$(uppercase(parname))"] = val
         elseif isa(val, AbstractString)
-            spars["MSK_SPAR_$parname"] = val
+            spars["MSK_SPAR_$(uppercase(parname))"] = val
         else
             error("Value $val for parameter $option has unrecognized type")
         end
